@@ -48,7 +48,7 @@ def test_basics():
 
 def test_status():
     peer, proto, chain, cb_data, cb = setup()
-    genesis = head = chain.blocks[-1]
+    genesis = chain.blocks[-1]
     ls = LockSet(1)
 
     # test status
@@ -87,7 +87,7 @@ def create_proposal(blk):
 
 def test_blocks():
     peer, proto, chain, cb_data, cb = setup()
-    gls = genesis_signing_lockset(chain.blocks[0], privkeys[0])
+    genesis_signing_lockset(chain.blocks[0], privkeys[0])
 
     # test blocks
     chain.mine(n=2)
@@ -124,7 +124,6 @@ def test_blockproposal():
 def test_votinginstruction():
     peer, proto, chain, cb_data, cb = setup()
     height = 1
-    round = 0
     bh = '1' * 32
     round_lockset = LockSet(len(validators))
     for i, privkey in enumerate(privkeys):

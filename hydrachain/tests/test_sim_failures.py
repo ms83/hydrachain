@@ -1,5 +1,5 @@
 from hydrachain.consensus.manager import RoundManager
-from hydrachain.consensus.simulation import Network, assert_heightdistance, assert_maxrounds
+from hydrachain.consensus.simulation import Network, assert_heightdistance
 
 
 def test_failing_validators():

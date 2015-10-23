@@ -3,7 +3,7 @@ import sys
 import rlp
 from .base import LockSet, Vote, VoteBlock, VoteNil, Signed
 from .base import BlockProposal, VotingInstruction, DoubleVotingError, InvalidVoteError
-from .base import TransientBlock, Block, Proposal, HDCBlockHeader, InvalidProposalError
+from .base import Block, Proposal, HDCBlockHeader, InvalidProposalError
 from .protocol import HDCProtocol
 from .utils import cstr, phx
 from .synchronizer import Synchronizer
@@ -106,7 +106,7 @@ class ConsensusManager(object):
 
         # add initial lockset
         head_proposal = self.load_proposal(self.head.hash)
-        #assert head_proposal
+        # assert head_proposal
         if head_proposal:
             assert head_proposal.blockhash == self.head.hash
             for v in head_proposal.signing_lockset:

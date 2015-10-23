@@ -145,8 +145,8 @@ def test_nac_tester():
     assert 26 == nc.tester_call_method(state, sender, SampleNAC.bfunc, 13)
 
     # FIXME THIS IS STILL BROKEN
-    #assert [1, 2] == nc.tester_call_method(state, sender, SampleNAC.ffunc)
-    #assert [1, 2] == nc.tester_call_method(state, sender, SampleNAC.ffunc2)
+    # assert [1, 2] == nc.tester_call_method(state, sender, SampleNAC.ffunc)
+    # assert [1, 2] == nc.tester_call_method(state, sender, SampleNAC.ffunc2)
 
     assert 4, 4 == nc.tester_call_method(state, sender, SampleNAC.cfunc, 4)
     assert [4] == nc.tester_call_method(state, sender, SampleNAC.ccfunc, 4)
@@ -226,7 +226,7 @@ def test_nac_instances():
     nc.registry.unregister(SampleNAC)
 
 
-## Events #########################
+# ## Events #########################
 
 class Shout(nc.ABIEvent):
     args = [dict(name='a', type='uint16', indexed=True),
@@ -254,13 +254,13 @@ def test_events():
     c0.afunc(1, 2)
 
 
-## json abi ##############################
+# ## json abi ##############################
 
 def test_jsonabi():
     print EventNAC.json_abi()
 
 
-# Storage ###############3
+# ## Storage ###############
 
 
 def test_typed_storage():
@@ -312,7 +312,7 @@ def test_typed_storage():
 
     nc.registry.register(TestTSC)
     s = tester.state()
-    r = s._send(tester.k0, TestTSC.address, 0)
+    _ = s._send(tester.k0, TestTSC.address, 0)
     nc.registry.unregister(TestTSC)
 
 
@@ -405,7 +405,7 @@ def test_owned():
             ctx.assert_owner()
             return 1
 
-    assert TestTSC.protected.is_constant == True
+    assert TestTSC.protected.is_constant is True
 
     state = tester.state()
     nc.registry.register(TestTSC)
