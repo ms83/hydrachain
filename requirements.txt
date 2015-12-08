@@ -4,3 +4,4 @@ c_secp256k1==0.0.8
 bitcoin
 simpy
 pytest==2.8.2
+pipdeptree
