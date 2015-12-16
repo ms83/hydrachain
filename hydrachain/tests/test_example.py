@@ -9,6 +9,7 @@ from click.testing import CliRunner
 from hydrachain import app
 from pyethapp.rpc_client import JSONRPCClient
 from requests.exceptions import ConnectionError
+from ethereum.processblock import mk_contract_address
 
 
 solidity_code = """
@@ -31,12 +32,12 @@ contract_code = "606060405260978060106000396000f360606040526000357c0100000000000
 
 def drive_test():
     def log(msg):
-        syslog.syslog(syslog.LOG_DEBUG, "[{} drive_test] {}".format(time.time(), msg))
+        #syslog.syslog(syslog.LOG_DEBUG, "[{} drive_test] {}".format(time.time(), msg))
         pass
 
     def wait_for_new_block(client):
         while True:
-            log('busy loop')
+            log('wait_for_new_block')
             block_hashes = client.call('eth_getFilterChanges', new_block_filter_id)
             time.sleep(0.5)
             if block_hashes:
@@ -62,19 +63,48 @@ def drive_test():
     recent_block_hash = wait_for_new_block(client)
 
     recent_block = client.call('eth_getBlockByHash', recent_block_hash, True)
+    log('recent_block {}'.format(recent_block))
+
     assert recent_block['transactions']
-    # FIXME - more asserts
+    tx = recent_block['transactions'][0]
+    assert tx['to'] == '0x'
+    assert tx['input'].startswith('0x')
+    assert len(tx['input']) > len('0x')
+
+    # Get transaction receipt to have the address of contract
+    receipt = client.call('eth_getTransactionReceipt', tx['hash'])
+    log('receipt {}'.format(receipt))
+
+    assert receipt['transactionHash'] == tx['hash']
+    assert receipt['blockHash'] == tx['blockHash']
+    assert receipt['blockHash'] == recent_block['hash']
+
+    # Get contract address from receipt
+    contract_address = receipt['contractAddress']
+    code = client.call('eth_getCode', contract_address)
+    log("code {}".format(code))
+
+    # FIXME - why code is '0x' ???
+
+    # Construct contract address manually
+    # sender = recent_block['transactions'][0]['from']
+    # nonce =  recent_block['transactions'][0]['nonce']
+    # contract_address = '0x' + mk_contract_address(sender, nonce).encode("hex")
 
     # Perform some action on contract (set value to 50)
-    contract = client.new_abi_contract(contract_interface, '')
-    contract.set(50)
+    contract = client.new_abi_contract(contract_interface, contract_address)
+    res = contract.set(50)
+    log('contract.set(50) {}'.format(res))
+
+    # FIXME - why new block is not coming ???
 
     # Wait for new block
     recent_block_hash = wait_for_new_block(client)
     recent_block = client.call('eth_getBlockByHash', recent_block_hash, True)
 
     # FIXME - assert that value was set
-    contract.get()
+    res = contract.get()
+    log('contract.get() {}'.format(res))
 
     # Stop me and CliRunner
     os.kill(os.getpid(), signal.SIGINT)
@@ -82,15 +112,15 @@ def drive_test():
 
 @pytest.mark.timeout(10)
 def test():
-    # Start thread that will communicate to app ran by CliRunner
+    # Start thread that will communicate to the app ran by CliRunner
     d = Thread(target=drive_test)
     d.setDaemon(True)
     d.start()
 
     runner = CliRunner()
     runner.invoke(app.pyethapp_app.app,
-                  ['-d', 'datadir', '--log-file', '/tmp/hydra.log', 'runmultiple'])
-                                                   # FIXME
+                  ['-d', 'datadir', '--log-file', '/tmp/hydra.log', '-l', ':debug', 'runmultiple'])
+                  #['-d', 'datadir', 'runmultiple']) # FIXME
 
 
 if __name__ == '__main__':
