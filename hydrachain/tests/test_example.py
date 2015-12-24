@@ -135,7 +135,6 @@ class TestDriverThread(Thread):
             self.log(unicode(e))
 
 
-@pytest.mark.xfail  # FIXME - Fails on Travis build
 @pytest.mark.parametrize('gasprice', (0, 1))
 def test_example(gasprice):
     # Start thread that will communicate to the app ran by CliRunner
@@ -156,7 +155,7 @@ def test_example(gasprice):
         datadir = 'datadir{}'.format(gasprice)
         runner.invoke(app.pyethapp_app.app, ['-d', datadir, 'runmultiple'])
         #runner.invoke(app.pyethapp_app.app, ['-d', datadir,
-        #'-l', 'eth:debug,jsonrpc:debug', '--log-file', '/tmp/hydra.log', 'runmultiple'])
+        #'-l', ':debug', '--log-file', '/tmp/hydra.log', 'runmultiple'])
 
     assert t.test_successful, '\n'.join(t.test_output)
 
