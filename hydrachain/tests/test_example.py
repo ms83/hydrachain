@@ -73,7 +73,7 @@ class TestDriverThread(Thread):
             self.new_block_filter_id = self.client.call('eth_newBlockFilter')
             self.log('eth_newBlockFilter OK')
 
-            # Wait until all existing blocks are processed
+            # Read initial blocks created by HydraChain on startup
             while self.wait_for_new_block(timeout=3):
                 pass
 
