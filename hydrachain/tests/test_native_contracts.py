@@ -147,8 +147,8 @@ def test_nac_tester():
     assert 26 == nc.tester_call_method(state, sender, SampleNAC.bfunc, 13)
 
     # FIXME THIS IS STILL BROKEN
-    #assert [1, 2] == nc.tester_call_method(state, sender, SampleNAC.ffunc)
-    #assert [1, 2] == nc.tester_call_method(state, sender, SampleNAC.ffunc2)
+    # assert [1, 2] == nc.tester_call_method(state, sender, SampleNAC.ffunc)
+    # assert [1, 2] == nc.tester_call_method(state, sender, SampleNAC.ffunc2)
 
     assert 4, 4 == nc.tester_call_method(state, sender, SampleNAC.cfunc, 4)
     assert [4] == nc.tester_call_method(state, sender, SampleNAC.ccfunc, 4)
@@ -164,7 +164,7 @@ def test_nac_tester():
     else:
         assert False, 'must fail'
     try:
-        nc.tester_call_method(state, sender, SampleNAC.afunc, 2**15, 2)
+        nc.tester_call_method(state, sender, SampleNAC.afunc, 2 ** 15, 2)
     except tester.TransactionFailed:
         pass
     else:
@@ -228,7 +228,7 @@ def test_nac_instances():
     nc.registry.unregister(SampleNAC)
 
 
-## Events #########################
+# Events #########################
 
 class Shout(nc.ABIEvent):
     args = [dict(name='a', type='uint16', indexed=True),
@@ -256,7 +256,7 @@ def test_events():
     c0.afunc(1, 2)
 
 
-## json abi ##############################
+# json abi ##############################
 
 def test_jsonabi():
     print EventNAC.json_abi()
@@ -273,7 +273,8 @@ def test_typed_storage():
         a = nc.Scalar('uint32')
         b = nc.List('uint16')
         c = nc.Dict('uint32')
-        d = nc.IterableDict('uint32')
+        d = nc.IterableDict('uint256')
+        e = nc.IterableDict('string')
 
         def _safe_call(ctx):
             # skalar
@@ -311,26 +312,50 @@ def test_typed_storage():
             ctx.c[key] = 66
             assert ctx.c[key] == 66
 
+            k = '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x17q'
+            v = 2146209080
+
+            ctx.c[k] = v
+            assert ctx.c[k] == v
+
             # iterable dict
+
+            ctx.d[k] = v
+            assert len(ctx.d) == 1
+            assert ctx.d[k] == v
+            ctx.d[k] = 0
+
             N = 10
             for i in range(1, N + 1):
-                v = i**2
+                v = i ** 2
                 k = bytes(i)
                 ctx.d[k] = v
                 assert ctx.d[k] == v
                 assert len(list(ctx.d.keys())) == i
                 assert list(ctx.d.keys()) == [bytes(j) for j in range(1, i + 1)]
-                assert list(ctx.d.values()) == [j**2 for j in range(1, i + 1)]
+                assert list(ctx.d.values()) == [j ** 2 for j in range(1, i + 1)]
 
-            # print list(ctx.d.keys())
-            # print list(ctx.d.values())
-            # print len(list(ctx.d.keys()))
+            # iterable dict with strings
+            N = 10
+            for i in range(1, N + 1):
+                v = str(i ** 2)
+                k = bytes(i)
+                ctx.e[k] = v
+                # log.DEV('kv', k=k, v=v)
+                assert ctx.e[k] == v, ctx.e[k]
+                assert len(list(ctx.e.keys())) == i
+                assert list(ctx.e.keys()) == [bytes(j) for j in range(1, i + 1)]
+                assert list(ctx.e.values()) == [str(j ** 2) for j in range(1, i + 1)]
+
+            print list(ctx.e.keys())
+            print list(ctx.e.values())
+            print len(list(ctx.e.keys()))
 
             return 1, 1, []
 
     nc.registry.register(TestTSC)
     s = tester.state()
-    r = s._send(tester.k0, TestTSC.address, 0)
+    s._send(tester.k0, TestTSC.address, 0)
     nc.registry.unregister(TestTSC)
 
 
@@ -355,7 +380,7 @@ def test_nested_typed_storage():
             with pytest.raises(NotImplementedError):
                 assert len(ctx.a) == 0
             assert len(l) == 0
-    
+
             ctx.a[key][idx] = 33
             assert l[idx] == 33
             assert len(ctx.a[key]) == 1
@@ -366,7 +391,6 @@ def test_nested_typed_storage():
             assert ctx.a[key][idx] == 66
             ctx.a[key][idx + 1] = 67
             assert len(l) == 2
-
 
             # second key
 
@@ -403,10 +427,7 @@ def test_nested_typed_storage():
             ctx.c[2]['test2'] = 9
             assert len(ctx.c) == 4
 
-
-
             # test IterableDict
-
 
             ctx.f['A'] = 1
             assert len(ctx.f) == 1
@@ -427,7 +448,6 @@ def test_nested_typed_storage():
                 for idx in range(3):
                     ctx.e[k][idx] = 42 * (idx + 1)
 
-
             assert set(ctx.e.keys()) == set(['A', 'B', 'C'])
             assert len(ctx.e) == 3
 
@@ -437,12 +457,11 @@ def test_nested_typed_storage():
                 assert len(v) == 3
                 assert list(iter(v)) == [42 * (idx + 1) for idx in range(3)]
 
-
             return 1, 1, []
 
     nc.registry.register(TestTSC)
     s = tester.state()
-    r = s._send(tester.k0, TestTSC.address, 0)
+    s._send(tester.k0, TestTSC.address, 0)
     nc.registry.unregister(TestTSC)
 
 
@@ -535,7 +554,7 @@ def test_owned():
             ctx.assert_owner()
             return 1
 
-    assert TestTSC.protected.is_constant == True
+    assert TestTSC.protected.is_constant is True
 
     state = tester.state()
     nc.registry.register(TestTSC)

@@ -40,6 +40,8 @@ import ethereum.vm as vm
 import ethereum.abi as abi
 from ethereum.utils import encode_int, zpad, big_endian_to_int, int_to_big_endian
 from ethereum import slogging
+from ethereum.transactions import Transaction
+
 slogging.configure(config_string=':debug')
 log = slogging.get_logger('nc')
 
@@ -73,6 +75,7 @@ class Registry(object):
         return address.startswith(self.native_contract_instance_address_prefix)
 
     def address_to_native_contract_class(self, address):
+        "returns class._on_msg_unsafe, use x.im_self to get class"
         assert isinstance(address, bytes) and len(address) == 20
         assert self.is_instance_address(address)
         nca = self.native_contract_address_prefix + address[-4:]
@@ -83,6 +86,9 @@ class Registry(object):
         assert issubclass(contract, NativeContractBase)
         assert len(contract.address) == 20
         assert contract.address.startswith(self.native_contract_address_prefix)
+        if self.native_contracts.get(contract.address) == contract._on_msg:
+            log.debug("already registered", contract=contract, address=contract.address)
+            return
         assert contract.address not in self.native_contracts, 'address already taken'
         self.native_contracts[contract.address] = contract._on_msg
         log.debug("registered native contract", contract=contract, address=contract.address)
@@ -355,6 +361,7 @@ class NativeABIContract(NativeContractBase):
         assert arg_names.pop() == 'returns'  # must be last element
         return_types = arg_types.pop()  # can be list or multiple
         name = method.__func__.func_name
+        assert not name.startswith('_')
         m_id = abi.method_id(name, arg_types)
         return dict(id=m_id, arg_types=arg_types, arg_names=arg_names, return_types=return_types,
                     name=name, method=method)
@@ -453,6 +460,10 @@ class ABIEvent(object):
         return [a['type'] for a in cls.args]
 
     @classmethod
+    def arg_names(cls):
+        return [a['name'] for a in cls.args]
+
+    @classmethod
     def event_id(cls):
         return abi.event_id(cls.__name__, cls.arg_types())
 
@@ -483,23 +494,26 @@ class ABIEvent(object):
         ctx._ext.log(ctx.address, topics, data)
 
     @classmethod
-    def listen(cls, log, address=None, callback=None):
-        if not len(log.topics) or log.topics[0] != cls.event_id():
+    def listen(cls, log_, address=None, callback=None):
+        if not len(log_.topics) or log_.topics[0] != cls.event_id():
             return
-        if address and address != log.address:
+        if address and address != log_.address:
             return
-        o = {}
-        for i, t in enumerate(log.topics[1:]):
+        # o = dict(address=log_.address)
+        o = dict()
+        for i, t in enumerate(log_.topics[1:]):
             name = cls.args[i]['name']
             if cls.arg_types()[i] in ('string', 'bytes'):
+                assert t < 2 ** 256, "error with {}, user bytes32".format(cls.args[i])
                 d = encode_int(t)
             else:
+                assert t < 2 ** 256
                 d = zpad(encode_int(t), 32)
             data = abi.decode_abi([cls.arg_types()[i]], d)[0]
             o[name] = data
         o['event_type'] = cls.__name__
         unindexed_types = [a['type'] for a in cls.args if not a['indexed']]
-        o['args'] = abi.decode_abi(unindexed_types, log.data)
+        o['args'] = abi.decode_abi(unindexed_types, log_.data)
         if callback:
             callback(o)
         else:
@@ -537,9 +551,6 @@ def tester_nac(state, sender, address, value=0):
         setattr(cproxy, m.__func__.func_name, mk_method(m))
 
     return cproxy()
-
-
-from ethereum.transactions import Transaction
 
 
 def test_call(block, sender, to, data='', gasprice=0, value=0):
@@ -645,20 +656,23 @@ class TypedStorage(object):
         return big_endian_to_int(data)
 
     def _key(self, k):
+        assert isinstance(k, bytes)
+        k = zpad(k, 32)
         return utils.sha3(b'%s:%s' % (self._prefix, k))
 
     def set(self, k=b'', v=None, value_type=None):
         assert v is not None
         value_type = value_type or self._value_type
-        if isinstance(value_type, TypedStorage): # nested type
+        if isinstance(value_type, TypedStorage):  # nested type
             # dummy call to mark storage
             value_type = 'uint16'
-        v = self._db_encode_type(value_type, v)
-        self._set(self._key(k), v)
+        # log.DEV('setting', cls=self.__class__, k=k, v=v)
+        v_ = self._db_encode_type(value_type, v)
+        self._set(self._key(k), v_)
 
     def get(self, k=b'', value_type=None):
         value_type = value_type or self._value_type
-        if isinstance(value_type, TypedStorage): # nested types
+        if isinstance(value_type, TypedStorage):  # nested types
             # create new instance
             ts = value_type.__class__(value_type._value_type)
 
@@ -666,10 +680,11 @@ class TypedStorage(object):
                 if not self._get(self._key(k)):
                     self[k] = 1  # set dummy to indicate, that there is an object
                 self._set(ts_k, v)
-            ts.setup(k, self._get, _set)
+            ts.setup(self._key(k), self._get, _set)
             return ts
         r = self._db_decode_type(value_type, self._get(self._key(k)))
         return r
+
 
 class Scalar(TypedStorage):
     pass
@@ -718,7 +733,6 @@ class Dict(List):
         raise NotImplementedError('no len of dict available, use IterableDict')
 
 
-
 class IterableDict(Dict):
 
     "Note, don't use this for a high number of keys, because it does not clean them up on deletion"
@@ -756,13 +770,15 @@ class IterableDict(Dict):
         _len = self.get(b'__len__', value_type='uint32')
         keys = (self.get(self._ckey(i), value_type='bytes') for i in range(_len))
         items = ((k, self.get(k)) for k in keys)
-        valid = ((k, v) for k, v in items if v)
+        valid = list((k, v) for k, v in items if v)
+        # log.DEV('in items', len=_len, keys=list(keys), valid=list(valid), items=list(items))
         return valid
 
     __iter__ = keys
 
     def __len__(self):
         return sum(1 for k in self.keys())
+
 
 class TypedStorageContract(NativeContractBase):
 
@@ -793,14 +809,20 @@ class TypedStorageContract(NativeContractBase):
 
         # move TypedStorage members to _protected (so we can reinitialize them later).
         def slots():
-            return [(k, ts) for k, ts in self.__class__.__dict__.items()
-                    if isinstance(ts, TypedStorage)]
+            return [(k, getattr(self.__class__, k)) for k in dir(self.__class__)
+                    if isinstance(getattr(self.__class__, k), TypedStorage)]
+
+        # log.DEV('preparing storage', klass=self.__class__, slots=slots())
         for k, ts in slots():
             if not k.startswith('_'):
                 setattr(self.__class__, '_' + k, ts)
-                delattr(self.__class__, k)
+                try:
+                    delattr(self.__class__, k)
+                except AttributeError:
+                    pass  # from parent class
+
         # create members (on each invocation!)
-        for k, ts in slots():
+        for k, ts in [(k, ts) for k, ts in slots() if k.startswith('_')]:
             assert k.startswith('_')
             k = k[1:]
             ts.setup(k, get_storage_data, set_storage_data)
@@ -810,45 +832,11 @@ class TypedStorageContract(NativeContractBase):
                 assert isinstance(ts, Scalar)
 
                 def _mk_property(skalar):
+                    # log.DEV('creating property for', klass=self.__class__, k=k, skalar=skalar)
                     return property(lambda s: skalar.get(), lambda s, v: skalar.set(v=v))
                 setattr(self.__class__, k, _mk_property(ts))
 
 # The NativeContract Class ###################
 
-
 class NativeContract(NativeABIContract, TypedStorageContract):
     pass
-
-
-"""
-gas counting and
-OOG exception
-
-call
-address.call
-
-    def init(): - executed upon contract creation, accepts no parameters
-    def shared(): - executed before running init and user functions
-    def code(): - executed before any user functions
-
-constant
-stop
-
-modifiers
-@nca.isowner
-@nca.constant
-"""
-
-
-# class AddressNAC(NativeABIContract):
-#     address = utils.int_to_addr(5000)
-
-#     def getit(ctx, returns='address[]'):
-#         print "GETIT CALLED"
-#         return ['\x00' * 20] * 3
-
-# registry.register(AddressNAC)
-
-# import json
-# print json.dumps(AddressNAC.json_abi(), indent=2)
-# print AddressNAC.address.encode('hex')
